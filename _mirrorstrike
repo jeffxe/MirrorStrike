@@ -1,0 +1,12 @@
+#compdef mirrorstrike
+
+_arguments \
+  '--scan[Simulate port scan]:IP address:' \
+  '--brute[Simulate brute force]:IP address:' \
+  '--user[Username for brute force]:' \
+  '--payload[Simulate payload injection]:' \
+  '--report[Generate simulation report]' \
+  '--stealth[Enable stealth mode]' \
+  '--live[Enable live scan output]' \
+  '--risk[Calculate simulated risk score]' \
+  '--export[Export logs format]:format:(json html txt)'
