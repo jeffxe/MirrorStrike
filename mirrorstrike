@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+# MirrorStrike v2.0 — Developed by Jeffrey Nathaniel
+# Safe Simulation Tool: attacker-behaviour reflection & reporting
+
+import argparse
+import json
+import os
+import random
+import sys
+import time
+from datetime import datetime
+from importlib.machinery import SourceFileLoader
+
+LOG_DIR = "/var/log/mirrorstrike/"
+LOG_FILE = os.path.join(LOG_DIR, "events.json")
+REPORT_FILE = os.path.join(LOG_DIR, "report.txt")
+
+PLUGIN_DIRS = [
+    os.path.join(os.getcwd(), "plugins"),
+    os.path.expanduser("~/.mirrorstrike/plugins"),
+]
+
+def ensure_logs():
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR, exist_ok=True)
+        try:
+            os.chmod(LOG_DIR, 0o777)
+        except PermissionError:
+            pass
+
+def load_logs():
+    ensure_logs()
+    if not os.path.exists(LOG_FILE):
+        return []
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_logs(logs):
+    ensure_logs()
+    with open(LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(logs, f, indent=4)
+
+def log_event(event_type, message, data=None):
+    logs = load_logs()
+    logs.append({
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "type": event_type,
+        "message": message,
+        "data": data or {}
+    })
+    save_logs(logs)
+
+def banner():
+    print(r"""
+███╗   ███╗██╗███╗   ██╗██╗██████╗ ██████╗ ███████╗██████╗ 
+████╗ ████║██║████╗  ██║██║██╔══██╗██╔══██╗██╔════╝██╔══██╗
+██╔████╔██║██║██╔██╗ ██║██║██║  ██║██║  ██║█████╗  ██████╔╝
+██║╚██╔╝██║██║██║╚██╗██║██║██║  ██║██║  ██║██╔══╝  ██╔══██╗
+██║ ╚═╝ ██║██║██║ ╚████║██║██████╔╝██████╔╝███████╗██║  ██║
+╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝
+        MirrorStrike v2.0 — Developed by Jeffrey Nathaniel
+""")
+
+def sleep_step(base=0.1, stealth=False):
+    if stealth:
+        time.sleep(base + random.uniform(0.05, 0.4))
+    else:
+        time.sleep(base)
+
+def simulate_scan(ip, stealth=False, live=False):
+    print(f"[SCAN] Simulating port scan on {ip}...\n")
+    ports = [22, 80, 443, 3306, 8080]
+    results = []
+
+    for idx, p in enumerate(ports, start=1):
+        status = random.choice(["open", "closed", "filtered"])
+        if live:
+            sys.stdout.write(f"\r[SCAN] Checking port {p} ({idx}/5) ... {status}   ")
+            sys.stdout.flush()
+        else:
+            print(f" → Port {p}: {status}")
+        results.append({"port": p, "status": status})
+        sleep_step(0.15, stealth)
+
+    if live:
+        print()
+
+    log_event("scan", f"Scan on {ip}", {"results": results})
+    return results
+
+def simulate_brute(ip, user, stealth=False):
+    print(f"[BRUTE] Simulating brute force on {ip} with '{user}'...\n")
+    attempts = []
+    total = 5
+    success = random.randint(2, total)
+
+    for i in range(1, total + 1):
+        pwd = f"pass{i}123"
+        if i == success:
+            print(f" → Attempt {i}/{total}: {user}:{pwd} → [SIMULATED SUCCESS]")
+            result = "SIMULATED_SUCCESS"
+        else:
+            print(f" → Attempt {i}/{total}: {user}:{pwd} → failed")
+            result = "fail"
+
+        attempts.append({"user": user, "password": pwd, "result": result})
+        sleep_step(0.18, stealth)
+
+    log_event("bruteforce", f"Bruteforce on {ip}", {"attempts": attempts})
+    return attempts
+
+def simulate_payload(url, stealth=False):
+    print(f"[PAYLOAD] Simulating payload injection on {url}...\n")
+    payloads = [
+        "admin' OR '1'='1 --",
+        "<script>alert('XSS')</script>",
+        "1; DROP TABLE users; --"
+    ]
+
+    analysis = []
+    for p in payloads:
+        print(f" → Payload sent: {p}")
+        category = classify_payload(p)
+        print(f"    → Classified as: {category}")
+        analysis.append({"payload": p, "category": category})
+        sleep_step(0.25, stealth)
+
+    log_event("payload", f"Payload injection on {url}", {"analysis": analysis})
+    return analysis
+
+def classify_payload(p):
+    pl = p.lower()
+    if any(s in pl for s in [" drop ", " or '1'='1", "--", "select "]):
+        return "SQLi-like"
+    if "<script" in pl:
+        return "XSS-like"
+    return "Generic"
+
+def reflect(actions, label="generic"):
+    print(f"\n[REFLECT] Mirroring {label} actions...\n")
+    for a in actions:
+        print(" → Mirrored:", a)
+        time.sleep(0.12)
+    log_event("mirror", f"Reflected {label} actions", {"count": len(actions)})
+
+def generate_report():
+    logs = load_logs()
+    if not logs:
+        print("[REPORT] No logs found.")
+        return
+
+    with open(REPORT_FILE, "w", encoding="utf-8") as f:
+        f.write("MirrorStrike Report\n")
+        f.write("====================\n")
+        f.write(f"Generated: {datetime.now()}\n\n")
+        for e in logs:
+            f.write(f"{e['time']} - {e['type']} - {e['message']}\n")
+
+    print(f"[REPORT] Saved at {REPORT_FILE}")
+
+def calculate_risk():
+    logs = load_logs()
+    if not logs:
+        print("[RISK] No logs found.")
+        return
+
+    score = 0
+    weights = {"scan": 10, "bruteforce": 15, "payload": 20, "mirror": 5}
+    counts = {k: 0 for k in weights}
+
+    for e in logs:
+        t = e["type"]
+        for key in weights:
+            if key in t:
+                counts[key] += 1
+                score += weights[key]
+
+    score = min(score, 100)
+
+    print("\n[RISK] Simulation Risk Summary")
+    print("=============================")
+    for k, v in counts.items():
+        print(f" - {k}: {v}")
+    print(f"\n → Risk score: {score}/100\n")
+
+def interactive_shell():
+    banner()
+    print("[SHELL] Interactive mode. Type 'help'.\n")
+
+    while True:
+        try:
+            cmd = input("mirrorstrike> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        if not cmd:
+            continue
+
+        c = cmd.split()
+        main = c[0]
+        args = c[1:]
+
+        if main in ("exit", "quit"):
+            break
+        elif main == "help":
+            print("""
+Commands:
+ scan <ip>
+ brute <ip> <user>
+ payload <url>
+ risk
+ report
+ quit/exit
+""")
+        elif main == "scan" and len(args) == 1:
+            r = simulate_scan(args[0])
+            reflect(r, "scan")
+        elif main == "brute" and len(args) == 2:
+            r = simulate_brute(args[0], args[1])
+            reflect(r, "bruteforce")
+        elif main == "payload" and len(args) == 1:
+            r = simulate_payload(args[0])
+            reflect(r, "payload")
+        elif main == "risk":
+            calculate_risk()
+        elif main == "report":
+            generate_report()
+        else:
+            print("[SHELL] Invalid command.")
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scan")
+    parser.add_argument("--brute")
+    parser.add_argument("--user")
+    parser.add_argument("--payload")
+    parser.add_argument("--report", action="store_true")
+    parser.add_argument("--stealth", action="store_true")
+    parser.add_argument("--live", action="store_true")
+    parser.add_argument("--risk", action="true")
+    parser.add_argument("--export")
+
+    if len(sys.argv) == 1:
+        interactive_shell()
+        return
+
+    args = parser.parse_args()
+    banner()
+
+    if args.scan:
+        r = simulate_scan(args.scan, stealth=args.stealth, live=args.live)
+        reflect(r, "scan")
+
+    if args.brute:
+        user = args.user or "admin"
+        r = simulate_brute(args.brute, user, stealth=args.stealth)
+        reflect(r, "bruteforce")
+
+    if args.payload:
+        r = simulate_payload(args.payload, stealth=args.stealth)
+        reflect(r, "payload")
+
+    if args.report:
+        generate_report()
+
+    if args.risk:
+        calculate_risk()
+
+if __name__ == "__main__":
+    main()
